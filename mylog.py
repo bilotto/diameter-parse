@@ -1,5 +1,8 @@
 import logging
 
+with open("output.log", "w") as f:
+    f.write("")
+
 DEBUG_MODE = True
 
 # format = "%(levelname)s,%(asctime)s,%(funcName)s,%(threadName)s,%(message)s"

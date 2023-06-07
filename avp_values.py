@@ -1,5 +1,111 @@
 avp_values = dict()
 
+	
+# Termination-Cause
+# Indicates the reason why a session was terminated on the access device.
+# 1—DIAMETER LOGOUT
+# 2—DIAMETER SERVICE NOT PROVIDED
+# 3—DIAMETER BAD ANSWER
+# 4—DIAMETER ADMINISTRATIVE
+# 5—DIAMETER LINK BROKEN
+# 6—DIAMETER AUTH EXPIRED
+# 7— DIAMETER USER MOVED
+# 8—DIAMETER SESSION TIMEOUT
+avp_values["diameter.Termination-Cause"] = dict()
+avp_values["diameter.Termination-Cause"]["1"] = "DIAMETER LOGOUT"
+avp_values["diameter.Termination-Cause"]["2"] = "DIAMETER SERVICE NOT PROVIDED"
+avp_values["diameter.Termination-Cause"]["3"] = "DIAMETER BAD ANSWER"
+avp_values["diameter.Termination-Cause"]["4"] = "DIAMETER ADMINISTRATIVE"
+avp_values["diameter.Termination-Cause"]["5"] = "DIAMETER LINK BROKEN"
+avp_values["diameter.Termination-Cause"]["6"] = "DIAMETER AUTH EXPIRED"
+avp_values["diameter.Termination-Cause"]["7"] = "DIAMETER USER MOVED"
+avp_values["diameter.Termination-Cause"]["8"] = "DIAMETER SESSION TIMEOUT"
+
+
+
+# The Abort-Cause AVP (AVP code 500) is of type Enumerated, and determines the cause of an abort session request (ASR) or of a RAR indicating a bearer release. The following values are defined:
+# BEARER_RELEASED (0) This value is used when the bearer has been deactivated as a result from normal signalling handling. For GPRS the bearer refers to the PDP Context.
+# INSUFFICIENT_SERVER_RESOURCES (1) This value is used to indicate that the server is overloaded and needs to abort the session.
+# INSUFFICIENT_BEARER_RESOURCES (2) This value is used when the bearer has been deactivated due to insufficient bearer resources at a transport gateway (e.g. GGSN for GPRS).
+# PS_TO_CS_HANDOVER (3) This value is used when the bearer has been deactivated due to PS to CS handover.
+# SPONSORED_DATA_CONNECTIVITY_ DISALLOWED (4) This value is used in the ASR when the PCRF needs to initiates the AF session termination due to the operator policy (e.g. disallowing the UE accessing the sponsored data connectivity in the roaming case).
+avp_values["diameter.Abort-Cause"] = dict()
+avp_values["diameter.Abort-Cause"]["0"] = "BEARER_RELEASED"
+avp_values["diameter.Abort-Cause"]["1"] = "INSUFFICIENT_SERVER_RESOURCES"
+avp_values["diameter.Abort-Cause"]["2"] = "INSUFFICIENT_BEARER_RESOURCES"
+avp_values["diameter.Abort-Cause"]["3"] = "PS_TO_CS_HANDOVER"
+avp_values["diameter.Abort-Cause"]["4"] = "SPONSORED_DATA_CONNECTIVITY_DISALLOWED"
+
+# 5.3.19 PCC-Rule-Status AVP (All access types)
+# The PCC-Rule-Status AVP (AVP code 1019) is of type Enumerated, and describes the status of one or a group of PCC
+# Rules.
+# The following values are defined:
+# ACTIVE (0)
+# This value is used to indicate that the PCC rule(s) are successfully installed (for those provisioned from PCRF)
+# or activated (for those pre-provisioned in PCEF)
+# INACTIVE (1)
+# This value is used to indicate that the PCC rule(s) are removed (for those provisioned from PCRF) or inactive
+# (for those pre-provisioned in PCEF)
+# TEMPORARILY INACTIVE (2)
+# This value is used to indicate that, for some reason (e.g. loss of bearer), already installed or activated PCC rules
+# are temporarily disabled.
+avp_values["diameter.PCC-Rule-Status"] = dict()
+avp_values["diameter.PCC-Rule-Status"]["0"] = "ACTIVE"
+avp_values["diameter.PCC-Rule-Status"]["1"] = "INACTIVE"
+avp_values["diameter.PCC-Rule-Status"]["2"] = "TEMPORARILY INACTIVE"
+
+
+# Rule-Failure-Code
+# 5.3.30 Rule-Failure-Code AVP (All access types)
+# The Rule-Failure-Code AVP (AVP code 1031) is of type Enumerated. It is sent by the PCEF to the PCRF within a
+# Charging-Rule-Report AVP to identify the reason a PCC Rule is being reported.
+# The following values are defined:
+# UNKNOWN_RULE_NAME (1)
+# This value is used to indicate that the pre-provisioned PCC rule could not be successfully activated because the
+# Charging-Rule-Name or Charging-Rule-Base-Name is unknown to the PCEF.
+# RATING_GROUP_ERROR (2)
+# This value is used to indicate that the PCC rule could not be successfully installed or enforced because the
+# Rating-Group specified within the Charging-Rule-Definition AVP by the PCRF is unknown or, invalid.
+# SERVICE_IDENTIFIER_ERROR (3)
+# This value is used to indicate that the PCC rule could not be successfully installed or enforced because the
+# Service-Identifier specified within the Charging-Rule-Definition AVP by the PCRF is invalid, unknown, or not
+# applicable to the service being charged.
+# GW/PCEF_MALFUNCTION (4)
+# This value is used to indicate that the PCC rule could not be successfully installed (for those provisioned from
+# the PCRF) or activated (for those pre-provisioned in PCEF) or enforced (for those already successfully installed)
+# due to GW/PCEF malfunction.
+# RESOURCES_LIMITATION (5)
+# This value is used to indicate that the PCC rule could not be successfully installed (for those provisioned from
+# PCRF) or activated (for those pre-provisioned in PCEF) or enforced (for those already successfully installed) due
+# to a limitation of resources at the PCEF.
+# MAX_NR_BEARERS_REACHED (6)
+# This value is used to indicate that the PCC rule could not be successfully installed (for those provisioned from
+# PCRF) or activated (for those pre-provisioned in PCEF) or enforced (for those already successfully installed) due
+# to the fact that the maximum number of bearers has been reached for the IP-CAN session.
+# UNKNOWN_BEARER_ID (7)
+# This value is used only in the case the PCRF is performing bearer binding to indicate that the PCC rule could not
+# be successfully installed or enforced at the PCEF because the Bearer-Id specified within the Charging-RuleInstall AVP by the PCRF is unknown or invalid.
+# MISSING_BEARER_ID (8)
+# This value is used only in the case the PCRF is performing bearer binding to indicate that the PCC rule could not
+# be successfully installed or enforced at the PCEF because the Bearer-Id is not specified within the ChargingRule-Install AVP by the PCRF.
+# MISSING_FLOW_DESCRIPTION (9)
+# This value is used to indicate that the PCC rule could not be successfully installed or enforced because the FlowDescription or Flow-Information AVP is not specified within the Charging-Rule-Definition AVP by the PCRF
+# during the first install request of the PCC rule.
+avp_values["diameter.Rule-Failure-Code"] = dict()
+avp_values["diameter.Rule-Failure-Code"]["1"] = "UNKNOWN_RULE_NAME"
+avp_values["diameter.Rule-Failure-Code"]["2"] = "RATING_GROUP_ERROR"
+avp_values["diameter.Rule-Failure-Code"]["3"] = "SERVICE_IDENTIFIER_ERROR"
+avp_values["diameter.Rule-Failure-Code"]["4"] = "GW/PCEF_MALFUNCTION"
+avp_values["diameter.Rule-Failure-Code"]["5"] = "RESOURCES_LIMITATION"
+avp_values["diameter.Rule-Failure-Code"]["6"] = "MAX_NR_BEARERS_REACHED"
+avp_values["diameter.Rule-Failure-Code"]["7"] = "UNKNOWN_BEARER_ID"
+avp_values["diameter.Rule-Failure-Code"]["8"] = "MISSING_BEARER_ID"
+avp_values["diameter.Rule-Failure-Code"]["9"] = "MISSING_FLOW_DESCRIPTION"
+avp_values["diameter.Rule-Failure-Code"]["13"] = "PS_TO_CS_HANDOVER"
+
+
+
+
 # The Media-Type AVP (AVP code 520) is of type Enumerated, and it determines the media type of a session
 # component. The media types indicate the type of media in the same way as the SDP media types with the same names
 # defined in RFC 4566 [13]. The following values are defined:

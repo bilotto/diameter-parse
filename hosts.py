@@ -44,7 +44,7 @@ class Clusters:
 
     def get_cluster_name_by_host(self, host):
         for cluster in self.clusters.values():
-            if host in cluster.hosts:
+            if cluster.hosts.get(host):
                 return cluster.name
         return None
     

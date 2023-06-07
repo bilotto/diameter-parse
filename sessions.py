@@ -1,6 +1,7 @@
 # Filename: sessions.py
 from typing import Any
 from diameter_messages import DiameterMessage
+from mylog import logging
 
 class Session():
     def __init__(self, session_id):
@@ -9,24 +10,20 @@ class Session():
         self.start_time = None
         self.end_time = None
         self.messages = []
-        self.cluster = None
+        self.host = None
+        self.messages_pairs_tuples = []
 
     def start_session(self, message):
         """Start the session at the given time."""
         start_time = message.time
-        self.cluster = message.cluster
+        self.host = message.to_host
         self.start_time = start_time
 
     def end_session(self, message):
         """End the session at the given time."""
         end_time = message.time
         self.end_time = end_time
-
-    def add_message(self, message):
-        """Add a DiameterMessage object to the session."""
-        if isinstance(message, DiameterMessage):
-            self.messages.append(message)
-
+            
     def get_messages(self):
         """Return all the messages of the session."""
         return self.messages.sort(key=lambda x: x.time)
@@ -40,9 +37,14 @@ class Session():
             return self.return_tshark_filter()
         """Return the attribute of the object."""
         return super().__getattribute__(__name)
+    
+    def get_message_by_name(self, message_name):
+        """Return the first message with the given name."""
+        for message in self.messages:
+            if message.message_name == message_name:
+                return message
+        return None
 
-pcrf_messages = ["CCA-I", "CCA-U", "CCA-T", "RAR"]
-pgw_messages = ["CCR-I", "CCR-U", "CCR-T", "RAA"]
 
 class GxSession(Session):
     def __init__(self, gx_session_id, framed_ip):
@@ -50,6 +52,9 @@ class GxSession(Session):
         super().__init__(gx_session_id)
         self.framed_ip = framed_ip
         self.rx_sessions = []
+        # gx session fields
+        self.rat_type = None
+        self.ip_can_type = None
 
     def add_rx_session(self, rx_session):
         """Add a RxSession object to the session."""
@@ -63,17 +68,50 @@ class GxSession(Session):
             tshark_filter += f" || diameter.Session-Id == \"{rx_session.session_id}\""
         return tshark_filter
     
-    def check_session_binding(self):
-        # check if the first rx session is in the same cluster as the gx session
-        if self.cluster is None:
-            return None
-        if len(self.rx_sessions) == 0:
-            return None
-        if self.rx_sessions[0].cluster is None:
-            return None
-        if self.rx_sessions[0].cluster == self.cluster:
-            return True
-        return False
+    def add_message(self, message):
+        """Add a DiameterMessage object to the session."""
+        if isinstance(message, DiameterMessage):
+            self.messages.append(message)
+            # add message to the messages pairs list
+            # requests messages will always be first in the tuple
+            if message.is_request():
+                messages_pair = (message, None)
+                self.messages_pairs_tuples.append(messages_pair)
+            elif message.message_name == "CCA-I" or message.message_name == "CCA-U" or message.message_name == "CCA-T":
+                for i in range(len(self.messages_pairs_tuples)):
+                    if self.messages_pairs_tuples[i][0].get_avp("CC-Request-Number") == message.get_avp("CC-Request-Number"):
+                        # Add to the same tuple
+                        self.messages_pairs_tuples[i] = (self.messages_pairs_tuples[i][0], message)
+                        break
+            elif message.message_name == "RAA":
+                # RAA messages are paired to RAR, but there is no field to match them, it has to be done by order of arrival and/or time
+                # find the first RAR message without a RAA message
+                for i in range(len(self.messages_pairs_tuples)):
+                    if self.messages_pairs_tuples[i][0].message_name == "RAR" and self.messages_pairs_tuples[i][1] is None:
+                        self.messages_pairs_tuples[i] = (self.messages_pairs_tuples[i][0], message)
+                        break
+            elif message.message_name == "AAA":
+                # AAA messages are paired to AAR, but there is no field to match them, it has to be done by order of arrival and/or time
+                # find the first AAR message without a AAA message
+                for i in range(len(self.messages_pairs_tuples)):
+                    if self.messages_pairs_tuples[i][0].message_name == "AAR" and self.messages_pairs_tuples[i][1] is None:
+                        self.messages_pairs_tuples[i] = (self.messages_pairs_tuples[i][0], message)
+                        break
+            elif message.message_name == "STA":
+                # STA messages are paired to STR, but there is no field to match them, it has to be done by order of arrival and/or time
+                # find the first STR message without a STA message
+                for i in range(len(self.messages_pairs_tuples)):
+                    if self.messages_pairs_tuples[i][0].message_name == "STR" and self.messages_pairs_tuples[i][1] is None:
+                        self.messages_pairs_tuples[i] = (self.messages_pairs_tuples[i][0], message)
+                        break
+            elif message.message_name == "ASA":
+                # ASA messages are paired to ASR, but there is no field to match them, it has to be done by order of arrival and/or time
+                # find the first ASR message without a ASA message
+                for i in range(len(self.messages_pairs_tuples)):
+                    if self.messages_pairs_tuples[i][0].message_name == "ASR" and self.messages_pairs_tuples[i][1] is None:
+                        self.messages_pairs_tuples[i] = (self.messages_pairs_tuples[i][0], message)
+                        break
+
 
 
     def __repr__(self) -> str:
@@ -100,13 +138,6 @@ class RxSession(Session):
             self.messages.append(message)
             self.gx_session.add_message(message)
 
-    def is_voice_call(self):
-        """Return True if the session contains a voice call."""
-        for message in self.messages:
-            if message.is_voice_call():
-                return True
-        return False
-    
     def get_end_time(self):
         """Return the end time of the session."""
         if self.end_time:
@@ -129,8 +160,6 @@ class RxSession(Session):
             return f"RxSession(session_id={self.session_id}, duration={self.get_duration()}s, start_time={self.start_time}, end_time={self.end_time}, n_messages={len(self.messages)}, gx_session_id={self.gx_session_id})"
         return f"VoiceCall(start_time={self.start_time}, end_time={self.end_time}, duration={self.get_duration()}s, n_messages={len(self.messages)}, gx_session_id={self.gx_session_id})"
     
-
-
 class RxSessions:
     def __init__(self, gx_sessions=None):
         self.sessions = {}
@@ -150,9 +179,6 @@ class RxSessions:
                 subscriber_sessions.append(session)
         return subscriber_sessions
     
-        
-
-
 class GxSessions:
     def __init__(self, subscribers, rx_sessions=None):
         self.sessions = {}

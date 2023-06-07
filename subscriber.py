@@ -154,3 +154,10 @@ class Subscribers(dict):
             return
         self.remove_gx_session(line.get("diameter.Session-Id"), subscriber)
         # self.terminate_gx_session(subscriber, line)
+
+#pospago
+# subscriber1 = Subscriber("56950018795", "730030540816229")
+# subscriber2 = Subscriber("56986124800", "730030540816203")
+# #prepago
+# subscriber3 = Subscriber("56973401557", "730030540816207")
+# subscriber4 = Subscriber("56973179039", "730030540816206")

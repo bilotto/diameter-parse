@@ -8,27 +8,31 @@ from diameter_messages import *
 from subscriber import Subscriber, Subscribers
 from diameter_messages import DiameterMessage
 from diameter_messages import base_filter, all_fields, diameter_fields
+import json
 
+def identify_subscriber(message, subscribers, gx_sessions, rx_sessions):
+    diameter_message = DiameterMessage(message)
+    diameter_message_name = diameter_message.message_name
+    if diameter_message_name == "CCR-I":
+        # in the ccri, we get the subscriber from the msisdn
+        msisdn, imsi = get_subscription_data(diameter_message.message)
+        subscriber = subscribers.get_subscriber(msisdn)
+    elif diameter_message_name == "AAR":
+        # in the aar, we get the subscriber from the framed_ip address used in the ccri
+        session_id = diameter_message.get_avp("Session-Id")
+        rx_session = rx_sessions.get_session_by_session_id(session_id)
+        if not rx_session:
+            framed_ip = diameter_message.get_avp("Framed-IP-Address")
+            subscriber = gx_sessions.get_subscriber_by_framed_ip(framed_ip)
+        else:
+            return None
+    else:
+        # get the subscriber through the gx session id
+        session_id = diameter_message.get_avp("Session-Id")
+        subscriber = gx_sessions.get_subscriber_by_session_id(session_id)
+    
+    return subscriber
 
-def add_fields_if_exist(line, fields, output):
-    for field in fields:
-        if line.get(field):
-            if not "," in line.get(field):
-                if avp_values.get(field):
-                    output[field] = avp_values.get(field).get(line.get(field))
-                else:
-                    output[field] = line.get(field)
-            else:
-                # multiple values in the same field
-                if not avp_values.get(field):
-                    output[field] = line.get(field)
-                else:
-                    for value in line.get(field).split(","):
-                        if not output.get(field):
-                            output[field] = avp_values.get(field).get(value)
-                        else:
-                            output[field] += "," + avp_values.get(field).get(value)
-    return output
 
 
 def parse_tshark_output(tshark_output, subscribers):
@@ -37,8 +41,8 @@ def parse_tshark_output(tshark_output, subscribers):
     
     for message in tshark_output:
         diameter_message = DiameterMessage(message)
-        diameter_message_name = diameter_message.identify()
-        if diameter_message_name == "CCR_I":
+        diameter_message_name = diameter_message.message_name
+        if diameter_message_name == "CCR-I":
             # in the ccri, we get the subscriber from the msisdn
             msisdn, imsi = get_subscription_data(diameter_message.message)
             subscriber = subscribers.get_subscriber(msisdn)
@@ -48,17 +52,17 @@ def parse_tshark_output(tshark_output, subscribers):
                 subscribers.add_subscriber(new_subscriber)
             subscriber = subscribers.get_subscriber(msisdn)
             # create a new gx session
-            session_id = get_session_id(diameter_message.message)
-            framed_ip = get_framed_ip(diameter_message.message)
+            session_id = diameter_message.get_avp("Session-Id")
+            framed_ip = diameter_message.get_avp("Framed-IP-Address")
             gx_session = GxSession(session_id, framed_ip)
             gx_session.add_message(diameter_message)
             gx_sessions.add_session(subscriber, gx_session)
         elif diameter_message_name == "AAR":
-            session_id = get_session_id(diameter_message.message)
+            session_id = diameter_message.get_avp("Session-Id")
             # in the aar, we get the subscriber from the framed_ip address used in the ccri
             rx_session = rx_sessions.get_session_by_session_id(session_id)
             if not rx_session:
-                framed_ip = get_framed_ip(diameter_message.message)
+                framed_ip = diameter_message.get_avp("Framed-IP-Address")
                 subscriber = gx_sessions.get_subscriber_by_framed_ip(framed_ip)
                 if not subscriber:
                     logging.error(f"Subscriber not found in diameter message {diameter_message_name} with framed ip {framed_ip}")
@@ -71,9 +75,9 @@ def parse_tshark_output(tshark_output, subscribers):
                 rx_sessions.add_session(rx_session)
             # add the message to the new or existing rx session
             rx_session.add_message(diameter_message)
-        elif diameter_message_name == "CCR_U" or diameter_message_name == "CCR_T" or diameter_message_name == "RAR" or diameter_message_name == "RAA":
+        elif diameter_message_name == "CCR-U" or diameter_message_name == "CCR-T" or diameter_message_name == "RAR" or diameter_message_name == "RAA":
             # get the subscriber through the gx session id
-            session_id = get_session_id(diameter_message.message)
+            session_id = diameter_message.get_avp("Session-Id")
             subscriber = gx_sessions.get_subscriber_by_session_id(session_id)
             if not subscriber:
                 logging.error(f"Subscriber not found in diameter message {diameter_message_name} with session id {session_id}")
@@ -82,8 +86,8 @@ def parse_tshark_output(tshark_output, subscribers):
             # get the gx_session object and add the message
             gx_session = gx_sessions.get_session_by_session_id(session_id)
             gx_session.add_message(diameter_message)
-        elif diameter_message_name == "CCA_I" or diameter_message_name == "CCA_U" or diameter_message_name == "CCA_T":
-            session_id = get_session_id(diameter_message.message)
+        elif diameter_message_name == "CCA-I" or diameter_message_name == "CCA-U" or diameter_message_name == "CCA-T":
+            session_id = diameter_message.get_avp("Session-Id")
             subscriber = gx_sessions.get_subscriber_by_session_id(session_id)
             if not subscriber:
                 logging.error(f"Subscriber not found in diameter message {diameter_message_name} with session id {session_id}")
@@ -92,36 +96,28 @@ def parse_tshark_output(tshark_output, subscribers):
             # get the gx_session object, add the message and start/close the session depending on the message
             gx_session = gx_sessions.get_session_by_session_id(session_id)
             gx_session.add_message(diameter_message)
-            if diameter_message_name == "CCA_I":
+            if diameter_message_name == "CCA-I":
                 gx_session.start_session(diameter_message)
-            elif diameter_message_name == "CCA_T":
+            elif diameter_message_name == "CCA-T":
                 gx_session.end_session(diameter_message)
         elif diameter_message_name == "AAA" :
             # in the aaa, get the rx_session from the rx session id, then get the subscriber from the gx session id associated
-            session_id = get_session_id(diameter_message.message)
+            session_id = diameter_message.get_avp("Session-Id")
             rx_session = rx_sessions.get_session_by_session_id(session_id)
             if not rx_session:
                 continue
             rx_session.start_session(diameter_message)
             rx_session.add_message(diameter_message)
-        elif diameter_message_name == "STR":
-            # in the str, we get the rx_session from the rx session id and add the message
-            session_id = get_session_id(diameter_message.message)
+        elif diameter_message_name == "STR" or diameter_message_name == "STA":
+            # in the str/sta, we get the rx_session from the rx session id and add the message
+            session_id = diameter_message.get_avp("Session-Id")
             rx_session = rx_sessions.get_session_by_session_id(session_id)
             if not rx_session:
                 continue
             rx_session.add_message(diameter_message)
-        elif diameter_message_name == "STA":
-            # in the sta, we get the rx_session from the rx session id and add the message
-            session_id = get_session_id(diameter_message.message)
-            rx_session = rx_sessions.get_session_by_session_id(session_id)
-            if not rx_session:
-                continue
-            rx_session.add_message(diameter_message)
-            rx_session.end_session(diameter_message)
         elif diameter_message_name == "ASR" or diameter_message_name == "ASA":
             # in the asr/asa, we get the rx_session from the rx session id and add the message
-            session_id = get_session_id(diameter_message.message)
+            session_id = diameter_message.get_avp("Session-Id")
             rx_session = rx_sessions.get_session_by_session_id(session_id)
             if not rx_session:
                 continue
@@ -133,66 +129,112 @@ def parse_tshark_output(tshark_output, subscribers):
     return gx_sessions
 
 
-def explain_gx_session(subscriber, gx_session):
-    messages = gx_session.messages
-    for message in messages:
-        # first, let's check the message type. in the ccr_i, lets get the RAT-Type and IP-CAN-Type
-        # in the cca_i, check the event-trigger installed
-        # in the rar, check the pcc rules
-        if message.message_name == "CCR_I":
-            rat_type = message.get_avp("diameter.RAT-Type")
-            ip_can_type = message.get_avp("diameter.IP-CAN-Type")
-            to_host = message.to_host
-            # Subscriber msisdn started session on to_host with ip_can_type and rat_type
-            logging.info(f"{subscriber.msisdn},{message.message_name},{to_host},{ip_can_type},{rat_type}")
+class QosInformation:
+#     # holds values of diameter.APN-Aggregate-Max-Bitrate-UL, diameter.APN-Aggregate-Max-Bitrate-DL, diameter.QoS-Class-Identifier
+    def __init__(self, apn_aggregate_max_bitrate_ul, apn_aggregate_max_bitrate_dl, qos_class_identifier):
+        self.apn_aggregate_max_bitrate_ul = apn_aggregate_max_bitrate_ul
+        self.apn_aggregate_max_bitrate_dl = apn_aggregate_max_bitrate_dl
+        self.qos_class_identifier = qos_class_identifier
 
-        # elif message.message_name == "CCA_I":
-        #     event_trigger = message.get_avp("diameter.Event-Trigger")
-        #     # triggers are comma separated
-        #     triggers = event_trigger.split(",")
-        #     logging.info(f"{subscriber.msisdn},{message.message_name},{triggers}")
-        # else:
-        #     logging.info(f"{subscriber.msisdn},{message.message_name},{message.fields}")
+    def __eq__(self, other):
+        return self.apn_aggregate_max_bitrate_ul == other.apn_aggregate_max_bitrate_ul and self.apn_aggregate_max_bitrate_dl == other.apn_aggregate_max_bitrate_dl and self.qos_class_identifier == other.qos_class_identifier
+    
+    def __str__(self):
+        return f"apn_aggregate_max_bitrate_ul: {self.apn_aggregate_max_bitrate_ul}, apn_aggregate_max_bitrate_dl: {self.apn_aggregate_max_bitrate_dl}, qos_class_identifier: {self.qos_class_identifier}"
+
+def get_rat_type(diameter_message):
+    rat_type = diameter_message.get_avp("RAT-Type")
+    return rat_type
+
+def get_ip_can_type(diameter_message):
+    ip_can_type = diameter_message.get_avp("IP-CAN-Type")
+    return ip_can_type
+
+def get_event_triggers(diameter_message):
+    event_triggers = diameter_message.get_avp("Event-Trigger")
+    return event_triggers
+
+def explain_gx_session(subscriber, gx_session):
+    # for now we will just log messages for each diameter message
+    for message_pair in gx_session.messages_pairs_tuples:
+        # get the result_code from the answer
+        result_code = message_pair[1].get_avp("Result-Code")
+        if result_code != "2001":
+            logging.error(f"{subscriber.msisdn} received error code {result_code} in {message_pair[1].message_name}")
+        # first find the CCR-I/CCA-I pair
+        if message_pair[0].message_name == "CCR-I" and message_pair[1].message_name == "CCA-I":
+            explanation_string = f"{subscriber.msisdn} started session,"
+            # get the ip_can_type and rat_type from the CCR-I
+            ccr_i = message_pair[0]
+            cca_i = message_pair[1]
+            ip_can_type = get_ip_can_type(ccr_i)
+            rat_type = get_rat_type(ccr_i)
+            explanation_string += f"with {ip_can_type} and {rat_type},"
+            # get qos information from the CCR-I and match with qos information in the CCA-I
+            ccr_i_qos_information = QosInformation(ccr_i.get_avp("APN-Aggregate-Max-Bitrate-UL"), ccr_i.get_avp("APN-Aggregate-Max-Bitrate-DL"), ccr_i.get_avp("QoS-Class-Identifier"))
+            cca_i_qos_information = QosInformation(cca_i.get_avp("APN-Aggregate-Max-Bitrate-UL"), cca_i.get_avp("APN-Aggregate-Max-Bitrate-DL"), cca_i.get_avp("QoS-Class-Identifier"))
+            if ccr_i_qos_information != cca_i_qos_information:
+                logging.error(f"{subscriber.msisdn},QoS requested was not granted by PCRF")
+            # get the event triggers from the CCA-I
+            event_triggers = get_event_triggers(message_pair[1])
+            if event_triggers:
+                explanation_string += f"with event triggers {event_triggers}"
+            logging.info(explanation_string)
+            # logging.info(f"{subscriber.msisdn} started session with {ip_can_type} and {rat_type} with event triggers {event_triggers}")
+        elif message_pair[0].message_name == "CCR-U" and message_pair[1].message_name == "CCA-U":
+            # get the event triggers that triggered the updated
+            explanation_string = f"{subscriber.msisdn} updated session,"
+            event_triggers = message_pair[0].get_avp("Event-Trigger")
+            if event_triggers:
+                explanation_string += f"event triggers {event_triggers}"
+            logging.info(explanation_string)
+        elif message_pair[0].message_name == "CCR-T" and message_pair[1].message_name == "CCA-T":
+            # get the diameter.Termination-Cause
+            termination_cause = message_pair[0].get_avp("Termination-Cause")
+            logging.info(f"{subscriber.msisdn} terminated session with termination cause {termination_cause}")
+
+
+def print_gx_session(subscriber, gx_session):
+    for message in gx_session.messages:
+        if message.is_request() and message.message_name != "RAR":
+            if message.message_name == "CCR-I":
+                logging.info(f"{subscriber.msisdn},{message},{gx_session.framed_ip}")
+            else:
+                logging.info(f"{subscriber.msisdn},{message}")
+        elif message.message_name == "RAA":
+            logging.info(f"{subscriber.msisdn},{message}")
+
+def debug_gx_session(subscriber, gx_session):
+    for message in gx_session.messages:
+        logging.info(f"{subscriber.msisdn},{message},{message.fields}")
+
 
 
 if __name__ == "__main__":
-    # first, clean the log file output.log
-    with open("output.log", "w") as f:
-        f.write("")
-    # tshark_command = TsharkCommand("output.pcap", [31009, 31115])
     # tshark_command = TsharkCommand("volte_4G_to_3G.cap", [10000, 20000])
-    # tshark_command = TsharkCommand("2405.pcap", [31009, 31115])
-    tshark_command = TsharkCommand("prueba_251022.pcap", [4000, 3880])
+    tshark_command = TsharkCommand("0706.pcap", [31009, 31115])
+    # tshark_command = TsharkCommand("prueba_volte_20221109_5.pcap", [4000, 3880])
     subscribers = Subscribers()
-    #pospago
-    subscriber1 = Subscriber("56950018795", "730030540816229")
-    subscriber2 = Subscriber("56986124800", "730030540816203")
-    #prepago
-    subscriber3 = Subscriber("56973401557", "730030540816207")
-    subscriber4 = Subscriber("56973179039", "730030540816206")
-    subscribers.add_subscriber(subscriber1)
-    subscribers.add_subscriber(subscriber2)
-    subscribers.add_subscriber(subscriber3)
-    subscribers.add_subscriber(subscriber4)
-    subscribers.add_subscriber(Subscriber("56946117399","730030540816245"))
-    subscribers.add_subscriber(Subscriber("56954225424","730030540816243"))
 
     tshark_output = tshark_command.run(base_filter, all_fields)
-
     gx_sessions = parse_tshark_output(tshark_output, subscribers)
     rx_sessions = gx_sessions.rx_sessions
 
+    # tshark_output = tshark_command.run_new(base_filter)
+    # logging.info(f"tshark output: {tshark_output}")
+    # tshark_output is a json string, make it into a list of dictionaries
+    # tshark_output = json.loads(tshark_output)
+    # gx_sessions = parse_tshark_output_new(tshark_output, subscribers)
+    # rx_sessions = gx_sessions.rx_sessions
+
     for subscriber in subscribers.get_subscribers():
         if subscriber.gx_sessions:
-            # show only last gx_session for each subscriber
+            # get last gx_session for each subscriber
+            # for gx_session in subscriber.gx_sessions:
             gx_session = subscriber.gx_sessions[-1]
-            # tshark_output = tshark_command.run(gx_session.tshark_filter, all_fields, f"{subscriber.msisdn}.pcap")
-            
-            session_binding = gx_session.session_binding
-            if session_binding == False:
-                logging.error(f"{subscriber},RxSession in a different cluster")
-            for message in gx_session.messages:
-                logging.info(f"{subscriber},{message}")
-                # if message.message_name == "CCR_I" or message.message_name == "AAR" or message.message_name == "RAA":
-                #     logging.info(f"{subscriber},{message}")
-            # explain_gx_session(subscriber, gx_session)
+            debug_gx_session(subscriber, gx_session)
+
+    # for subscriber in subscribers.get_subscribers():
+    #     if subscriber.gx_sessions:
+    #         gx_session = subscriber.gx_sessions[-1]
+    #         explain_gx_session(subscriber, gx_session)

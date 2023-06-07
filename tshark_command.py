@@ -51,6 +51,13 @@ class TsharkCommand:
             output_list_of_dicts.append(fields_dict)
         return output_list_of_dicts
 
+    def run_new(self, filter, output_file=None):
+        tshark_command = f"tshark -r {self.file} {self.get_ports()} -Y '{filter}' -T json --no-duplicate-keys"
+        logging.info(f"Running tshark command: {tshark_command}")
+        tshark_output = subprocess.check_output(tshark_command, shell=True).decode("utf-8")
+        return tshark_output
+
+
 def hex_to_ip(hex_ip):
     # check if the input is a string and it has exactly 8 characters
     if not isinstance(hex_ip, str) or len(hex_ip) != 8:
